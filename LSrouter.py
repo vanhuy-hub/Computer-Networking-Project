@@ -121,6 +121,9 @@ class LSrouter(Router):
     
     def _flood_lsp(self):
         self.seq += 1
+
+        self.lsp_seq[self.addr] = self.seq
+
         #links : (addr , cost) to neighbor of self router 
         links = {ep: cost for (ep,cost) in self.neighbors.values()}
      
