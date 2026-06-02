@@ -54,27 +54,7 @@ class DVrouter(Router):
             neighbor = packet.src_addr
             self.neighbor_routers[neighbor] = json.loads(packet.content)
 
-            new_routers = {self.addr: (0, None)}
-
-            for p, (n_address, link_cost) in self.neighbors.items():
-                if n_address not in new_routers or link_cost < new_routers[n_address][0]:
-                    new_routers[n_address] = (link_cost, p)
-
-                if n_address in self.neighbor_routers:
-                    for dst, remaining_cost in self.neighbor_routers[n_address].items():
-                        total_cost = link_cost + remaining_cost
-
-                        if dst not in new_routers or total_cost < new_routers[dst][0]:
-                            new_routers[dst] = (total_cost, p)
-
-            if new_routers != self.routers:
-                self.routers = new_routers
-                
-                my_dv = {dst: cost for dst, (cost, _) in self.routers.items()}
-                
-                for out_port in self.neighbors:
-                    update_packet = Packet(Packet.ROUTING, self.addr, "broadcast", content=json.dumps(my_dv))
-                    self.send(out_port, update_packet)
+            self.run_bellman_ford()
 
             
 
@@ -86,28 +66,7 @@ class DVrouter(Router):
         #   broadcast the distance vector of this router to neighbors
         self.neighbors[port] = (endpoint, cost)
 
-        new_routers = {self.addr: (0, None)}
-        for p, (n_address, link_cost) in self.neighbors.items():
-            if n_address not in new_routers or link_cost < new_routers[n_address][0]:
-                new_routers[n_address] = (link_cost, p)
-
-            if n_address in self.neighbor_routers:
-                for dst, remaining_cost in self.neighbor_routers[n_address].items():
-                    total_cost = link_cost + remaining_cost
-
-                    if dst not in new_routers or total_cost < new_routers[dst][0]:
-                        new_routers[dst] = (total_cost, p)
-
-        self.routers = new_routers
-
-        my_dv = {dst: cost for dst, (cost, _) in self.routers.items()}
-
-        for out_port, (n_address, _) in self.neighbors.items():
-            update_packet = Packet(Packet.ROUTING, self.addr, "broadcast", content=json.dumps(my_dv))
-            self.send(out_port, update_packet)
-
-        
-        
+        self.run_bellman_ford()
 
     def handle_remove_link(self, port):
         """Handle removed link."""
@@ -124,9 +83,24 @@ class DVrouter(Router):
         if n_address in self.neighbor_routers:
             del self.neighbor_routers[n_address]
 
+        self.run_bellman_ford()
+
+    def handle_time(self, time_ms):
+        """Handle current time."""
+        if time_ms - self.last_time >= self.heartbeat_time:
+            self.last_time = time_ms
+            # TODO
+            #   broadcast the distance vector of this router to neighbors
+            self.broadcast_distance_vector()
+
+    def broadcast_distance_vector(self):
+        my_dv = {dst: cost for dst, (cost, _) in self.routers.items()}
+        for out_port in self.neighbors:
+            update_packet = Packet(Packet.ROUTING, self.addr, "broadcast", content=json.dumps(my_dv))
+            self.send(out_port, update_packet)
+
+    def run_bellman_ford(self):
         new_routers = {self.addr: (0, None)}
-
-
         for p, (n_address, link_cost) in self.neighbors.items():
             if n_address not in new_routers or link_cost < new_routers[n_address][0]:
                 new_routers[n_address] = (link_cost, p)
@@ -137,26 +111,10 @@ class DVrouter(Router):
 
                     if dst not in new_routers or total_cost < new_routers[dst][0]:
                         new_routers[dst] = (total_cost, p)
-        
+
         if new_routers != self.routers:
             self.routers = new_routers
-            
-            my_dv = {dst: cost for dst, (cost, _) in self.routers.items()}
-            
-            for out_port in self.neighbors:
-                update_packet = Packet(Packet.ROUTING, self.addr, "broadcast", content=json.dumps(my_dv))
-                self.send(out_port, update_packet)
-
-    def handle_time(self, time_ms):
-        """Handle current time."""
-        if time_ms - self.last_time >= self.heartbeat_time:
-            self.last_time = time_ms
-            # TODO
-            #   broadcast the distance vector of this router to neighbors
-            my_dv = {dst: cost for dst, (cost, _) in self.routers.items()}
-            for out_port in self.neighbors:
-                update_packet = Packet(Packet.ROUTING, self.addr, "broadcast", content=json.dumps(my_dv))
-                self.send(out_port, update_packet)
+            self.broadcast_distance_vector()
 
 
     def __repr__(self):
